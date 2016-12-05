@@ -1,5 +1,5 @@
 <?php
-  include_once ("lib/MPAY24.php");
+  include_once ("mpay24-php/lib/MPAY24.php");
 
   $shop = new MPAY24();
 
@@ -82,7 +82,7 @@
 
         header('Location: '.$shop->selectPayment($mdxi)->location);
       break;
-      
+
     }
   }
 ?>
