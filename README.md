@@ -3,5 +3,5 @@ Unoffical example of seamless integration based on [mpay24-php](https://github.c
 
 ## Installation
 
-`git clone https://github.com/zirnipa/mpay24-seamless-php-example`
+`git clone --recursive https://github.com/zirnipa/mpay24-seamless-php-example`
 `cd mpay24-seamless-php-example`
