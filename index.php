@@ -158,13 +158,20 @@
 				<div class="cd-credit-card">
 					<div>
 					<?php
-					  include_once ("lib/MPAY24.php");
-					  $shop = new MPAY24();
-					  $tokenizer = $shop->createPaymentToken("CC")->getPaymentResponse();
+						require("bootstrap.php");
+						use Mpay24\Mpay24;
+						$mpay24 = new Mpay24();
+						
+						// Each Line is Optional so only add the lines that you need
+						$tokenizerConfig = array(
+							"language"    => "DE",
+						);
+												
+						$tokenizer = $mpay24->token("CC", $tokenizerConfig);
 					?>
 
-					<iframe src="<?php echo $tokenizer->location; ?>" frameBorder="0"></iframe>
-					<input name="token" type="hidden" value="<? echo $tokenizer->token; ?>" />
+					<iframe src="<?php echo $tokenizer->getLocation(); ?>" frameBorder="0" style="width: 80%;"></iframe>
+					<input name="token" type="hidden" value="<? echo $tokenizer->getToken(); ?>" />
 
 					<script>
 					  window.addEventListener("message", checkValid, false);
