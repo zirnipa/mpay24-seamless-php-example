@@ -2,7 +2,7 @@
 require("bootstrap.php");
 
 use Mpay24\Mpay24;
-
+use Mpay24\Mpay24Order;
 $mpay24 = new Mpay24();
 
   $payment = array(
@@ -69,7 +69,7 @@ $mpay24 = new Mpay24();
       break;
 
 		  case "PAYPAGE":
-			$mdxi = new ORDER();
+			$mdxi = new Mpay24Order();
 			$mdxi->Order->Tid = "123";
 			// Disable only specific payments
 			$mdxi->Order->PaymentTypes->setEnable (true);
