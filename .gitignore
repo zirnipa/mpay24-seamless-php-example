@@ -1,0 +1,9 @@
+/.buildpath
+/.idea
+/.settings
+/nbproject
+/vendor
+*.log
+.DS_STORE
+.phpunit.result.cache
+composer.lock
