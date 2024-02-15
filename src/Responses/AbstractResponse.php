@@ -3,7 +3,12 @@
 namespace Mpay24\Responses;
 
 use DOMDocument;
-use ErrorException;
+use Exception;
+use Mpay24\Exception\CouldNotLoadResponseXMLException;
+use Mpay24\Exception\EmptyResponseException;
+use Mpay24\Exception\MissingResponseReturnCodeException;
+use Mpay24\Exception\MissingResponseStatusException;
+use Mpay24\Exception\UnauthorizedAccessException;
 
 /**
  * The GeneralResponse class contains the status of a response and return code, which was delivered by mPAY24 as an answer of your request
@@ -17,7 +22,7 @@ use ErrorException;
  */
 abstract class AbstractResponse
 {
-     const NAME_SPACE = 'https://www.mpay24.com/soap/etp/1.5/ETP.wsdl';
+    const NAME_SPACE = 'https://www.mpay24.com/soap/etp/1.5/ETP.wsdl';
 
     /**
      * The response as Dom Document Object
@@ -46,6 +51,11 @@ abstract class AbstractResponse
     protected $createdAt;
 
     /**
+     * @var Exception
+     */
+    protected $exception;
+
+    /**
      * Sets the basic values from the response from mPAY24: status and return code
      *
      * @param string $response
@@ -53,47 +63,45 @@ abstract class AbstractResponse
      */
     public function __construct($response)
     {
-        if ('' != $response) {
-            $this->responseAsDom = new DOMDocument();
+        $this->responseAsDom = new DOMDocument();
+        $this->createdAt     = time();
+
+        try {
+            if ('' == $response) {
+                throw new EmptyResponseException();
+            }
+
+            if (preg_match('/<title>401 Unauthorized<\/title>/', $response) == 1) {
+                throw new UnauthorizedAccessException();
+            }
 
             try {
                 $this->responseAsDom->loadXML($response);
-            } catch (ErrorException $e) {
-                $this->status     = 'ERROR';
-                $this->returnCode = 'Unknown Error';
-
-                if (preg_match('/<title>401 Unauthorized<\/title>/', $response) == 1) {
-                    $this->returnCode = "401 Unauthorized: check your merchant ID and password";
-                }
-
-                return;
+            } catch (Exception $exception) {
+                throw new CouldNotLoadResponseXMLException($exception->getMessage());
             }
 
-            if (!empty($this->responseAsDom) && is_object($this->responseAsDom)) {
-                if ($this->responseAsDom->getElementsByTagName('status')->length == 0
-                    || $this->responseAsDom->getElementsByTagName('returnCode')->length == 0
-                ) {
-                    $this->status     = "ERROR";
-                    $this->returnCode = urldecode($response);
-
-                    if ($this->responseAsDom->getElementsByTagName('faultcode')->length > 0
-                        && $this->responseAsDom->getElementsByTagName('faultstring')->length > 0
-                    ) {
-                        $this->returnCode = $this->responseAsDom->getElementsByTagName('faultcode')->item(0)->nodeValue;
-                        $this->returnCode .= ' - ';
-                        $this->returnCode .= $this->responseAsDom->getElementsByTagName('faultstring')->item(0)->nodeValue;
-                    }
-                } else {
-                    $this->status     = $this->responseAsDom->getElementsByTagName('status')->item(0)->nodeValue;
-                    $this->returnCode = $this->responseAsDom->getElementsByTagName('returnCode')->item(0)->nodeValue;
-                }
+            if (empty($this->responseAsDom)) {
+                throw new EmptyResponseException();
             }
-        } else {
-            $this->status     = "ERROR";
-            $this->returnCode = "The response is empty! Probably your request to mPAY24 was not sent! Please see your server log for more information!";
+
+            if ($this->responseAsDom->getElementsByTagName('status')->length == 0) {
+                throw new MissingResponseStatusException($this->getFaultMessage());
+            }
+
+            if ($this->responseAsDom->getElementsByTagName('returnCode')->length == 0) {
+                throw new MissingResponseReturnCodeException($this->getFaultMessage());
+            }
+        } catch (Exception $exception) {
+            $this->setStatus('ERROR');
+            $this->setReturnCode($exception->getMessage());
+            $this->exception = $exception;
+
+            return;
         }
 
-        $this->createdAt = time();
+        $this->setStatus($this->responseAsDom->getElementsByTagName('status')->item(0)->nodeValue);
+        $this->setReturnCode($this->responseAsDom->getElementsByTagName('returnCode')->item(0)->nodeValue);
     }
 
     /**
@@ -101,7 +109,7 @@ abstract class AbstractResponse
      *
      * @return string
      */
-	public function getXml()
+    public function getXml()
     {
         return $this->responseAsDom->saveXML();
     }
@@ -137,6 +145,14 @@ abstract class AbstractResponse
     /**
      * @return bool
      */
+    public function hasNoException()
+    {
+        return is_null($this->exception);
+    }
+
+    /**
+     * @return bool
+     */
     public function hasStatusOk()
     {
         return $this->getStatus() == 'OK';
@@ -156,13 +172,29 @@ abstract class AbstractResponse
     /**
      * Set the return code in the response, which was delivered by mPAY24
      *
-     * @param $returnCode
-     *
-     * @return mixed
+     * @param string $returnCode
      */
     protected function setReturnCode($returnCode)
     {
-        return $this->returnCode = $returnCode;
+        $this->returnCode = $returnCode;
+    }
+
+    /**
+     * @return string|null
+     */
+    protected function getFaultMessage()
+    {
+        if ($this->responseAsDom->getElementsByTagName('faultcode')->length > 0
+            && $this->responseAsDom->getElementsByTagName('faultstring')->length > 0
+        ) {
+            $message = $this->responseAsDom->getElementsByTagName('faultcode')->item(0)->nodeValue;
+            $message .= ' - ';
+            $message .= $this->responseAsDom->getElementsByTagName('faultstring')->item(0)->nodeValue;
+
+            return $message;
+        }
+
+        return null;
     }
 
     /**
@@ -173,13 +205,13 @@ abstract class AbstractResponse
         return $this->createdAt;
     }
 
-	/**
-	 * @param $element
-	 *
-	 * @return \DOMElement
-	 */
-	protected function getBody($element)
-	{
-		return $this->responseAsDom->getElementsByTagNameNS(self::NAME_SPACE, $element)->item(0);
-	}
+    /**
+     * @param string $element
+     *
+     * @return \DOMElement
+     */
+    protected function getBody($element)
+    {
+        return $this->responseAsDom->getElementsByTagNameNS(self::NAME_SPACE, $element)->item(0);
+    }
 }

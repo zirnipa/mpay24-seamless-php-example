@@ -9,7 +9,7 @@ namespace Mpay24\Responses;
  * @package    Mpay24\Responses
  *
  * @author     mPAY24 GmbH <support@mpay24.com>
- * @author     Stefan Polzer <develop@posit.at>
+ * @author     Stefan Polzer <develop@ps-webdesign.com>
  * @filesource AcceptPaymentResponse.php
  * @license    MIT
  */
@@ -26,7 +26,7 @@ class AcceptPaymentResponse extends AbstractPaymentResponse
     {
         parent::__construct($response);
 
-        if ($this->hasNoError()) {
+        if ($this->hasNoException()) {
 
             $this->parseResponse($this->getBody('AcceptPaymentResponse'));
         }

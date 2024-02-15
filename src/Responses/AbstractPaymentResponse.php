@@ -9,7 +9,7 @@ namespace Mpay24\Responses;
  * @package    Mpay24\Responses
  *
  * @author     mPAY24 GmbH <support@mpay24.com>
- * @author     Stefan Polzer <develop@posit.at>
+ * @author     Stefan Polzer <develop@ps-webdesign.com>
  * @filesource AbstractPaymentResponse.php
  * @license    MIT
  */
@@ -84,6 +84,9 @@ abstract class AbstractPaymentResponse extends AbstractResponse
      */
     protected function parseResponse($body)
     {
+        if (!$body instanceof \DOMElement) {
+            return;
+        }
         if ($body->getElementsByTagName('mpayTID')->length > 0) {
             $this->mpayTid = (int)$body->getElementsByTagName('mpayTID')->item(0)->nodeValue;
         }

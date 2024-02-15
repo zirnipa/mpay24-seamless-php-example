@@ -2,6 +2,10 @@
 
 namespace Mpay24;
 
+use Mpay24\Exception\CanNotOpenFileException;
+use Mpay24\Exception\IntegrityException;
+use Mpay24\Exception\InvalidArgumentException;
+
 /**
  * The Mpay24 class provides functions, which are used to make a payment or a request to mPAY24
  *
@@ -9,7 +13,7 @@ namespace Mpay24;
  * @package    Mpay24
  *
  * @author     mPAY24 GmbH <support@mpay24.com>
- * @author     Stefan Polzer <develop@posit.at>
+ * @author     Stefan Polzer <develop@ps-webdesign.com>
  * @filesource Mpay24.php
  * @license    MIT
  */
@@ -35,7 +39,7 @@ class Mpay24
 
         $this->mpay24Sdk = new Mpay24Sdk($config);
 
-        $this->mpay24Sdk->checkRequirements(true, true, false);
+        $this->mpay24Sdk->checkRequirements(true, true);
     }
 
     /**
@@ -57,7 +61,7 @@ class Mpay24
     /**
      * Return a redirect URL to start a payment
      *
-     * @param $mdxi
+     * @param Mpay24Order $mdxi
      *
      * @return Responses\SelectPaymentResponse
      */
@@ -68,21 +72,7 @@ class Mpay24
         libxml_use_internal_errors(true);
 
         if (!$mdxi || !$mdxi instanceof Mpay24Order) {
-            $this->mpay24Sdk->dieWithMsg("To be able to use the Mpay24Api you must create an Mpay24Order object (Mpay24Order.php) and fulfill it with a MDXI!");
-        }
-
-        $mdxiXML = $mdxi->toXML();
-
-        if (!$this->mpay24Sdk->proxyUsed()) {
-            if (!$mdxi->validate()) {
-                $errors = "";
-
-                foreach (libxml_get_errors() as $error) {
-                    $errors .= trim($error->message) . "<br>";
-                }
-
-                $this->mpay24Sdk->dieWithMsg("The schema you have created is not valid!" . "<br><br>" . $errors . "<textarea cols='100' rows='30'>$mdxiXML</textarea>");
-            }
+            $this->mpay24Sdk->invalidArgument("To be able to use the Mpay24Api you must create an Mpay24Order object (Mpay24Order.php) and fulfill it with a MDXI!");
         }
 
         $mdxiXML = $mdxi->toXML();
@@ -98,9 +88,9 @@ class Mpay24
      * Start a backend to backend payment
      *
      * @param string $paymentType The payment type which will be used for the payment (EPS, SOFORT, PAYPAL, MASTERPASS or TOKEN)
-     * @param        $tid
-     * @param        $payment
-     * @param        $additional
+     * @param string $tid
+     * @param string $payment
+     * @param string $additional
      *
      * @return Responses\AcceptPaymentResponse
      */
@@ -158,10 +148,10 @@ class Mpay24
     /**
      * Get all profile according to the given parameters
      *
-     * @param string $customerId
-     * @param string $expiredBy
-     * @param int    $begin
-     * @param int    $size
+     * @param string  $customerId
+     * @param string  $expiredBy
+     * @param integer $begin
+     * @param integer $size
      *
      * @return Responses\ListProfilesResponse
      * @internal param string $mpayTid
@@ -185,13 +175,15 @@ class Mpay24
      * @param array  $additional  Additional parameters
      *
      * @return Responses\CreatePaymentTokenResponse
+     *
+     * @throws InvalidArgumentException
      */
     public function token($paymentType, array $additional = [])
     {
         $this->integrityCheck();
 
         if ($paymentType !== 'CC') {
-            die("The payment type '$paymentType' is not allowed! Currently allowed is only: 'CC'");
+            throw new InvalidArgumentException("The payment type '$paymentType' is not allowed! Currently allowed is only: 'CC'");
         }
 
         $tokenResult = $this->mpay24Sdk->createTokenPayment($paymentType, $additional);
@@ -202,10 +194,51 @@ class Mpay24
     }
 
     /**
+     * Create a token to integrate Apple Pay into your web page
+     *
+     * @param integer $amount Total payment amount shown to the customer
+     * @param string $currency Currency used for the payment
+     * @param string $domain Web page domain where Apple Pay will be integrated (https://www.yourdomain.com)
+     * @param string $language Language used for the Apple Pay session
+     *
+     * @return Responses\CreateApplePayTokenResponse
+     */
+    public function applePayToken($amount, $currency, $domain = null, $language = null)
+    {
+        $this->integrityCheck();
+
+        $applePayTokenResult = $this->mpay24Sdk->createApplePayPayment($amount, $currency, $domain, $language);
+
+        $this->recordedLastMessageExchange('CreateApplePayToken');
+
+        return $applePayTokenResult;
+    }
+
+    /**
+     * Create a token to integrate Google Pay into your web page
+     *
+     * @param integer $amount Total payment amount shown to the customer
+     * @param string $currency Currency used for the payment
+     * @param string $language Language used for the Google Pay session
+     *
+     * @return Responses\CreateGooglePayTokenResponse
+     */
+    public function googlePayToken($amount, $currency, $language = null)
+    {
+        $this->integrityCheck();
+
+        $googlePayTokenResult = $this->mpay24Sdk->createGooglePayPayment($amount, $currency, $language);
+
+        $this->recordedLastMessageExchange('CreateGooglePayToken');
+
+        return $googlePayTokenResult;
+    }
+
+    /**
      * Capture an amount of an authorized transaction
      *
-     * @param string $mpayTid The transaction ID, for the transaction you want to clear
-     * @param int    $amount  The amount you want to clear multiply by 100
+     * @param string  $mpayTid The transaction ID, for the transaction you want to clear
+     * @param integer $amount  The amount you want to clear multiply by 100
      *
      * @return Responses\ManualClearResponse
      */
@@ -225,8 +258,8 @@ class Mpay24
     /**
      * Refund an amount of a captured transaction
      *
-     * @param string $mpayTid The transaction ID, for the transaction you want to credit
-     * @param int    $amount  The amount you want to credit multiply by 100
+     * @param string  $mpayTid The transaction ID, for the transaction you want to credit
+     * @param integer $amount  The amount you want to credit multiply by 100
      *
      * @return Responses\ManualCreditResponse
      */
@@ -261,15 +294,57 @@ class Mpay24
         return $cancelTransactionResult;
     }
 
-    protected function integrityCheck()
+    /**
+     * Create a customer for recurring payments
+     *
+     * @param string     $paymentType The payment type which will be used for the payment (CC or TOKEN)
+     * @param string     $customerId
+     * @param array      $payment
+     * @param array|null $additional
+     *
+     * @return Responses\CreateCustomerResponse
+     */
+    public function createCustomer($paymentType, $customerId, $payment, $additional = [])
     {
-        if (!$this->mpay24Sdk) {
-            die("You are not allowed to define a constructor in the child class of Mpay24!");
-        }
+        $this->integrityCheck();
+        $createCustomerRes = $this->mpay24Sdk->createCustomer($paymentType, $customerId, $payment, $additional);
+        $this->recordedLastMessageExchange('CreateCustomer');
+
+        return $createCustomerRes;
     }
 
     /**
-     * @param $messageExchange
+     * Delete a profile.
+     *
+     * @param string      $customerId
+     * @param string|null $profileId
+     *
+     * @return Responses\DeleteProfileResponse
+     */
+    public function deleteProfile($customerId, $profileId = null)
+    {
+        $this->integrityCheck();
+
+        $response = $this->mpay24Sdk->deleteProfile($customerId, $profileId);
+        $this->recordedLastMessageExchange('DeleteProfile');
+
+        return $response;
+    }
+
+    /**
+     * @throws IntegrityException
+     */
+    protected function integrityCheck()
+    {
+        if ($this->mpay24Sdk instanceof Mpay24Sdk) {
+            return;
+        }
+
+        throw new IntegrityException();
+    }
+
+    /**
+     * @param string $messageExchange
      */
     protected function recordedLastMessageExchange($messageExchange)
     {
@@ -286,6 +361,8 @@ class Mpay24
      *
      * @param string $operation   The operation, which is to log: GetPaymentMethods, Pay, PayWithProfile, Confirmation, UpdateTransactionStatus, ClearAmount, CreditAmount, CancelTransaction, etc.
      * @param string $info_to_log The information, which is to log: request, response, etc.
+     *
+     * @throws CanNotOpenFileException
      */
     protected function writeLog($operation, $info_to_log)
     {
@@ -295,7 +372,12 @@ class Mpay24
             $serverName = $_SERVER['SERVER_NAME'];
         }
 
-        $fh = fopen($this->mpay24Sdk->getMpay24LogPath(), 'a+') or die("can't open file");
+        $fh = fopen($this->mpay24Sdk->getMpay24LogPath(), 'a+');
+
+        if (!$fh) {
+            throw new CanNotOpenFileException($this->mpay24Sdk->getMpay24LogPath());
+        }
+
         $MessageDate = date("Y-m-d H:i:s");
         $Message     = $MessageDate . " " . $serverName . " Mpay24 : ";
         $result      = $Message . "$operation : $info_to_log\n";
@@ -321,43 +403,43 @@ class Mpay24
     }
 
     /**
-     * @param $tid
-     * @param $mpayTid
+     * @param string $tid
+     * @param string $mpayTid
      */
     protected function validateTid($tid, $mpayTid)
     {
         if (!$mpayTid) {
-            $this->mpay24Sdk->dieWithMsg("The transaction '$tid' you send us could not assigned to a unique mPAYTID and maybe does not exist in the mPAY24 data base!");
+            $this->mpay24Sdk->invalidArgument("The transaction '$tid' you send us could not assigned to a unique mPAYTID and maybe does not exist in the mPAY24 data base!");
         }
     }
 
     /**
-     * @param $amount
+     * @param integer $amount
      */
     protected function validateAmount($amount)
     {
         if (!$amount || !is_numeric($amount)) {
-            $this->mpay24Sdk->dieWithMsg("The amount '$amount' you are trying to credit is not valid!");
+            $this->mpay24Sdk->invalidArgument("The amount '$amount' you are trying to credit is not valid!");
         }
     }
 
     /**
-     * @param $currency
+     * @param string $currency
      */
     protected function validateCurrency($currency)
     {
         if (!$currency || strlen($currency) != 3) {
-            $this->mpay24Sdk->dieWithMsg("The currency code '$currency' for the amount you are trying to clear is not valid (3-digit ISO-Currency-Code)!");
+            $this->mpay24Sdk->invalidArgument("The currency code '$currency' for the amount you are trying to clear is not valid (3-digit ISO-Currency-Code)!");
         }
     }
 
     /**
-     * @param $shippingCosts
+     * @param integer $shippingCosts
      */
     protected function validateShippingCosts($shippingCosts)
     {
         if (!$shippingCosts || !is_numeric($shippingCosts)) {
-            $this->mpay24Sdk->dieWithMsg("The shipping costs '$shippingCosts' you are trying to set are not valid!");
+            $this->mpay24Sdk->invalidArgument("The shipping costs '$shippingCosts' you are trying to set are not valid!");
         }
     }
 }

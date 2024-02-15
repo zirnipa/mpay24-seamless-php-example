@@ -8,7 +8,7 @@ namespace Mpay24;
  * Class Autoloader
  * @package    Mpay24
  *
- * @author     Stefan Polzer <develop@posit.at>
+ * @author     Stefan Polzer <develop@ps-webdesign.com>
  * @filesource Mpay24Autoloader.php
  * @license    MIT
  */
@@ -34,7 +34,7 @@ class Mpay24Autoloader
     }
 
     /**
-     * @param $class
+     * @param string $class
      */
     public static function autoload($class)
     {

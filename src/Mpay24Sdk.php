@@ -2,8 +2,16 @@
 
 namespace Mpay24;
 
+use Exception;
+use Mpay24\Exception\CanNotOpenFileException;
+use Mpay24\Exception\InvalidArgumentException;
+use Mpay24\Exception\RequirementException;
 use Mpay24\Requests\AcceptPayment;
+use Mpay24\Requests\CreateCustomer;
 use Mpay24\Requests\CreatePaymentToken;
+use Mpay24\Requests\CreateApplePayToken;
+use Mpay24\Requests\CreateGooglePayToken;
+use Mpay24\Requests\DeleteProfile;
 use Mpay24\Requests\ListPaymentMethods;
 use Mpay24\Requests\ListProfiles;
 use Mpay24\Requests\ManualCallback;
@@ -14,7 +22,11 @@ use Mpay24\Requests\SelectPayment;
 use Mpay24\Requests\TransactionHistory;
 use Mpay24\Requests\TransactionStatus;
 use Mpay24\Responses\AcceptPaymentResponse;
+use Mpay24\Responses\CreateCustomerResponse;
 use Mpay24\Responses\CreatePaymentTokenResponse;
+use Mpay24\Responses\CreateApplePayTokenResponse;
+use Mpay24\Responses\CreateGooglePayTokenResponse;
+use Mpay24\Responses\DeleteProfileResponse;
 use Mpay24\Responses\ListPaymentMethodsResponse;
 use Mpay24\Responses\ListProfilesResponse;
 use Mpay24\Responses\ManualCallbackResponse;
@@ -34,7 +46,8 @@ use Mpay24\Responses\TransactionStatusResponse;
  * Class Mpay24Sdk
  * @package    Mpay24
  *
- * @author     mPAY24 GmbH <support@mpay24.com>
+ * @author     Unzer Austria GmbH <online.support.at@unzer.com>
+ * @author     Stefan Polzer <develop@ps-webdesign.com>, Milko Daskalov <milko.daskalov@unzer.com>
  * @filesource Mpay24SDK.php
  * @license    MIT
  */
@@ -44,7 +57,7 @@ class Mpay24Sdk
      * An error message, that will be displayed to the user in case you are using the LIVE system
      * @const LIVE_ERROR_MSG
      */
-    const LIVE_ERROR_MSG = "We are sorry, an error occured - please contact the merchant!";
+    const LIVE_ERROR_MSG = "We are sorry, an error occurred - please contact the merchant!";
 
     /**
      * The link where the requests should be sent to if you use the
@@ -71,14 +84,14 @@ class Mpay24Sdk
      *
      * @const string
      */
-    const VERSION = "4.0.0";
+    const VERSION = "5.1.0";
 
     /**
      * Minimum PHP version Required
      *
      * @const string
      */
-    const MIN_PHP_VERSION = "5.3.3";
+    const MIN_PHP_VERSION = "7.2";
 
     /**
      * The whole soap-xml (envelope and body), which is to be sent to mPAY24 as request
@@ -101,69 +114,35 @@ class Mpay24Sdk
 
     public function __construct(Mpay24Config &$config = null)
     {
-        if (is_null($config)) {
-            $config = new Mpay24Config();
-        }
-
-        $this->config = $config;
+        $this->config = is_null($config) ? new Mpay24Config() : $config;
     }
 
     /**
      * @param bool $checkDomExtension
      * @param bool $checkCurlExtension
-     * @param bool $checkMCryptExtension
+     *
+     * @throws RequirementException
      */
     public function checkRequirements(
         $checkDomExtension = true,
-        $checkCurlExtension = true,
-        $checkMCryptExtension = true
+        $checkCurlExtension = true
     ) {
         if (version_compare(phpversion(), self::MIN_PHP_VERSION, '<') === true
             || ($checkCurlExtension && !in_array('curl', get_loaded_extensions()))
             || ($checkDomExtension && !in_array('dom', get_loaded_extensions()))
-            || ($checkMCryptExtension && !in_array('mcrypt', get_loaded_extensions()))
         ) {
-            $this->printMsg("ERROR: You don't meet the needed requirements for this example shop.<br>");
-
             if (version_compare(phpversion(), self::MIN_PHP_VERSION, '<') === true) {
-                $this->printMsg('You need PHP version ' . self::MIN_PHP_VERSION . ' or newer!<br>');
+                throw new RequirementException('You need PHP version ' . self::MIN_PHP_VERSION . ' or newer!');
             }
 
             if ($checkCurlExtension && !in_array('curl', get_loaded_extensions())) {
-                $this->printMsg("You need cURL extension!<br>");
+                throw new RequirementException('You need cURL extension!');
             }
 
             if ($checkDomExtension && !in_array('dom', get_loaded_extensions())) {
-                $this->printMsg("You need DOM extension!<br>");
+                throw new RequirementException("You need DOM extension!");
             }
-
-            if ($checkMCryptExtension && !in_array('mcrypt', get_loaded_extensions())) {
-                $this->printMsg("You need mcrypt extension!<br>");
-            }
-
-            $this->dieWithMsg("Please load the required extensions!");
         }
-    }
-
-    /**
-     * Set the basic (mandatory) settings for the requests
-     *
-     * @param string $spid
-     *          The SPID of your account, supported by mPAY24
-     * @param string $password
-     *          The flexLINK password, supported by mPAY24
-     * @param bool   $test
-     *          TRUE - when you want to use the TEST system
-     *
-     *          FALSE - when you want to use the LIVE system
-     *
-     * @deprecated Use Configuration Object instated
-     */
-    public function configureFlexLINK($spid, $password, $test)
-    {
-        $this->config->setSpid($spid);
-        $this->config->setFlexLinkPassword($password);
-        $this->config->useFlexLinkTestSystem($test);
     }
 
     /**
@@ -174,26 +153,6 @@ class Mpay24Sdk
     public function getMerchantID()
     {
         return $this->config->getMerchantId();
-    }
-
-    /**
-     * Get the SPID, which was set by the function configureFlexLINK($spid, $password, $test)
-     *
-     * @return string
-     */
-    public function getSpid()
-    {
-        return $this->config->getSPID();
-    }
-
-    /**
-     * Get the system, which should be used for flexLINK (test -> 'test' or live -> 'www')
-     *
-     * @return string
-     */
-    public function getFlexLinkSystem()
-    {
-        return $this->config->isFlexLinkTestSystem() ? 'test' : 'www';
     }
 
     /**
@@ -277,33 +236,45 @@ class Mpay24Sdk
     }
 
     /**
+     * @param string $message The message, which is shown to the user
+     *
+     * @throws InvalidArgumentException
+     */
+    public function invalidArgument($message)
+    {
+        $message = $this->config->isTestSystem() ? $message : '';
+
+        throw new InvalidArgumentException($message);
+    }
+
+    /**
      * In case the test system is used, show die with the real error message, otherwise, show the defined constant error LIVE_ERROR_MSG
      *
      * @param string $msg The message, which is shown to the user
      *
      * @throws \Exception
+     *
+     * @deprecated 5.0.0
      */
     public function dieWithMsg($msg)
     {
-        if ($this->config->isTestSystem()) {
-            throw new \Exception($msg);
-        } else {
-            throw new \Exception();
-        }
+        $msg = $this->config->isTestSystem() ? $msg : self::LIVE_ERROR_MSG;
+
+        throw new \Exception($msg);
     }
 
     /**
      * In case the test system is used, show print the real error message, otherwise, show the defined constant error LIVE_ERROR_MSG
      *
      * @param string $msg The message, which is shown to the user
+     *
+     * @deprecated 5.0.0
      */
     public function printMsg($msg)
     {
-        if ($this->config->isTestSystem()) {
-            print($msg);
-        } else {
-            print(self::LIVE_ERROR_MSG);
-        }
+        $msg = $this->config->isTestSystem() ? $msg : self::LIVE_ERROR_MSG;
+
+        print($msg);
     }
 
     /**
@@ -318,7 +289,8 @@ class Mpay24Sdk
             strpos($message, 'fopen(') + 6,
             strpos($message, ')') - (strpos($message, 'fopen(') + 6)
         );
-        $this->dieWithMsg("Can't open file '$path'! Please set the needed read/write rights!");
+
+        throw new CanNotOpenFileException($path);
     }
 
     /**
@@ -388,9 +360,63 @@ class Mpay24Sdk
     }
 
     /**
+     * Start Apple Pay payment integraged into your web page
+     *
+     * @param integer $amount Total payment amount shown to the customer
+     * @param string $currency Currency used for the payment
+     * @param string $domain Web page domain where Apple Pay will be integrated (https://www.yourdomain.com)
+     * @param string $language Language used for the Apple Pay session
+     *
+     * @return CreateApplePayTokenResponse
+     */
+    public function createApplePayPayment($amount, $currency, $domain = null, $language = null)
+    {
+        $request = new CreateApplePayToken($this->config->getMerchantId());
+
+        $request->setAmount($amount);
+        $request->setCurrency($currency);
+        $request->setDomain($domain);
+        $request->setLanguage($language);
+
+        $this->request = $request->getXml();
+
+        $this->send();
+
+        $result = new CreateApplePayTokenResponse($this->response);
+
+        return $result;
+    }
+
+    /**
+     * Start Google Pay payment integraged into your web page
+     *
+     * @param integer $amount Total payment amount shown to the customer
+     * @param string $currency Currency used for the payment
+     * @param string $language Language used for the Google Pay session
+     *
+     * @return CreateGooglePayTokenResponse
+     */
+    public function createGooglePayPayment($amount, $currency, $language = null)
+    {
+        $request = new CreateGooglePayToken($this->config->getMerchantId());
+
+        $request->setAmount($amount);
+        $request->setCurrency($currency);
+        $request->setLanguage($language);
+
+        $this->request = $request->getXml();
+
+        $this->send();
+
+        $result = new CreateGooglePayTokenResponse($this->response);
+
+        return $result;
+    }
+
+    /**
      * Initialize a manual callback to mPAY24 in order to check the information provided by PayPal
      *
-     * @param        $type
+     * @param string $type
      * @param string $tid The TID used for the transaction
      * @param array  $payment
      * @param array  $additional
@@ -418,12 +444,12 @@ class Mpay24Sdk
     /**
      * Initialize a manual callback to mPAY24 in order to check the information provided by PayPal
      *
-     * @param int    $mpayTid
-     * @param string $paymentType The payment type which will be used for the express checkout (PAYPAL or MASTERPASS)
+     * @param integer $mpayTid
+     * @param string  $paymentType The payment type which will be used for the express checkout (PAYPAL or MASTERPASS)
      *
-     * @param int    $amount
-     * @param bool   $cancel
-     * @param null   $order
+     * @param integer $amount
+     * @param bool    $cancel
+     * @param null    $order
      *
      * @return ManualCallbackResponse
      * @internal param string $requestString The callback request to mPAY24
@@ -450,8 +476,8 @@ class Mpay24Sdk
     /**
      * Clear a transaction with an amount
      *
-     * @param int $mpayTid The mPAY24 transaction ID
-     * @param int $amount  The amount to be cleared multiplay by 100
+     * @param integer $mpayTid The mPAY24 transaction ID
+     * @param integer $amount  The amount to be cleared multiplay by 100
      *
      * @return ManualClearResponse
      */
@@ -474,8 +500,8 @@ class Mpay24Sdk
     /**
      * Credit a transaction with an amount
      *
-     * @param int $mpayTid The mPAY24 transaction ID
-     * @param int $amount  The amount to be credited multiplay by 100
+     * @param integer $mpayTid The mPAY24 transaction ID
+     * @param integer $amount  The amount to be credited multiplay by 100
      *
      * @return ManualCreditResponse
      */
@@ -498,7 +524,7 @@ class Mpay24Sdk
     /**
      * Cancel a transaction
      *
-     * @param int $mpayTid The mPAY24 transaction ID for the transaction you want to cancel
+     * @param integer $mpayTid The mPAY24 transaction ID for the transaction you want to cancel
      *
      * @return ManualReverseResponse
      */
@@ -520,8 +546,8 @@ class Mpay24Sdk
     /**
      * Get all the information for a transaction, supported by mPAY24
      *
-     * @param int    $mpay24tid The mPAY24 transaction ID
-     * @param string $tid       The transaction ID from your shop
+     * @param integer $mpay24tid The mPAY24 transaction ID
+     * @param string  $tid       The transaction ID from your shop
      *
      * @return TransactionStatusResponse
      */
@@ -544,7 +570,7 @@ class Mpay24Sdk
     /**
      * Get all the information for a transaction, supported by mPAY24
      *
-     * @param int $mpayTid The mPAY24 transaction ID
+     * @param integer $mpayTid The mPAY24 transaction ID
      *
      * @return TransactionHistoryResponse
      */
@@ -566,10 +592,10 @@ class Mpay24Sdk
     /**
      * Get all the information for a transaction, supported by mPAY24
      *
-     * @param string $customerId
-     * @param string $expiredBy
-     * @param int    $begin
-     * @param int    $size
+     * @param string  $customerId
+     * @param string  $expiredBy
+     * @param integer $begin
+     * @param integer $size
      *
      * @return ListProfilesResponse
      * @internal param int $mpay24tid The mPAY24 transaction ID
@@ -594,23 +620,53 @@ class Mpay24Sdk
     }
 
     /**
-     * Encoded the parameters (AES256-CBC) for the pay link and return them
+     * Create a new customer for recurring payments
      *
-     * @param array $params The parameters, which are going to be posted to mPAY24
+     * @param string     $type
+     * @param string     $customerId
+     * @param array|null $payment
+     * @param array|null $additional
      *
-     * @return string
+     * @return CreateCustomerResponse
      */
-    public function flexLink($params)
+    public function createCustomer($type, $customerId, $payment = [], $additional = [])
     {
-        $paramsString = "";
+        $request = new CreateCustomer($this->config->getMerchantId());
 
-        foreach ($params as $key => $value) {
-            $paramsString .= "$key=$value&";
-        }
+        $request->setPType($type);
+        $request->setPaymentData($payment);
+        $request->setCustomerId($customerId);
+        $request->setAdditional($additional);
 
-        $encryptedParams = $this->ssl_encrypt($this->config->getFlexLinkPassword(), $paramsString);
+        $this->request = $request->getXml();
 
-        return $encryptedParams;
+        $this->send();
+
+        $result = new CreateCustomerResponse($this->response);
+
+        return $result;
+    }
+
+    /**
+     * Deletes a profile.
+     *
+     * @param string      $customerId
+     * @param string|null $profileId
+     *
+     * @return DeleteProfileResponse
+     */
+    public function deleteProfile($customerId, $profileId = null)
+    {
+        $request = new DeleteProfile($this->config->getMerchantId());
+        $request->setCustomerId($customerId);
+        $request->setProfileId($profileId);
+
+        $this->request = $request->getXml();
+        $this->send();
+
+        $result = new DeleteProfileResponse($this->response);
+
+        return $result;
     }
 
     /**
@@ -637,7 +693,7 @@ class Mpay24Sdk
         }
 
         try {
-            curl_setopt($ch, CURLOPT_CAINFO, __DIR__ . '/bin/cacert.pem');
+            curl_setopt($ch, CURLOPT_CAINFO, $this->config->getCaCertPath() . $this->config->getCaCertFileName());
 
             if ($this->config->getProxyHost()) {
                 curl_setopt($ch, CURLOPT_PROXY, $this->config->getProxyHost() . ':' . $this->config->getProxyPort());
@@ -655,67 +711,17 @@ class Mpay24Sdk
             $this->response = curl_exec($ch);
             curl_close($ch);
 
-        } catch (\Exception $e) {
-            if ($this->config->isTestSystem()) {
-                $dieMSG = "Your request couldn't be sent because of the following error:" . "\n" . curl_error(
-                        $ch
-                    ) . "\n" . $e->getMessage() . ' in ' . $e->getFile() . ', line: ' . $e->getLine() . '.';
-            } else {
-                $dieMSG = self::LIVE_ERROR_MSG;
-            }
+        } catch (Exception $exception) {
+            $message = $this->config->isTestSystem()
+                ? "Your request couldn't be sent because of the following error:" . "\n" . curl_error($ch) . "\n"
+                . $exception->getMessage() . ' in ' . $exception->getFile() . ', line: ' . $exception->getLine() . '.'
+                : self::LIVE_ERROR_MSG;
 
-            echo $dieMSG;
+            echo $message;
         }
 
-        if ($this->config->isEnableCurlLog()) {
+        if (isset($fh) && $this->config->isEnableCurlLog()) {
             fclose($fh);
         }
-    }
-
-    /**
-     * Encode data (AES256-CBC) using a password
-     *
-     * @deprecated As mcrypt is deprecated in PHP7 and it will be removed in PHP7.2 is good idea to switch to OpenSSL
-     *
-     * @param string $pass The password, used for the encoding
-     * @param string $data The data, that should be encoded
-     *
-     * @return string
-     */
-    protected function ssl_encrypt($pass, $data)
-    {
-        // Set a random salt
-        $salt = substr(md5(mt_rand(), true), 8);
-
-        $block = mcrypt_get_block_size(MCRYPT_RIJNDAEL_128, MCRYPT_MODE_CBC);
-        $pad   = $block - (strlen($data) % $block);
-
-        $data = $data . str_repeat(chr($pad), $pad);
-
-        // Setup encryption parameters
-        $td = mcrypt_module_open(MCRYPT_RIJNDAEL_128, "", MCRYPT_MODE_CBC, "");
-
-        $key_len = mcrypt_enc_get_key_size($td);
-        $iv_len  = mcrypt_enc_get_iv_size($td);
-
-        $total_len = $key_len + $iv_len;
-        $salted    = '';
-        $dx        = '';
-
-        // Salt the key and iv
-        while (strlen($salted) < $total_len) {
-            $dx = md5($dx . $pass . $salt, true);
-            $salted .= $dx;
-        }
-
-        $key = substr($salted, 0, $key_len);
-        $iv  = substr($salted, $key_len, $iv_len);
-
-        mcrypt_generic_init($td, $key, $iv);
-        $encrypted_data = mcrypt_generic($td, $data);
-        mcrypt_generic_deinit($td);
-        mcrypt_module_close($td);
-
-        return chunk_split(array_shift(unpack('H*', 'Salted__' . $salt . $encrypted_data)), 32, "\r\n");
     }
 }

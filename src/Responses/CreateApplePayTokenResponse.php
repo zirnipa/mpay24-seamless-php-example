@@ -3,17 +3,17 @@
 namespace Mpay24\Responses;
 
 /**
- * The CreatePaymentTokenResponse class contains all the parameters, returned with the confirmation from mPAY24
+ * The CreateApplePayTokenResponse class contains all the parameters, returned with the confirmation from mPAY24
  *
- * Class CreatePaymentTokenResponse
+ * Class CreateApplePayTokenResponse
  * @package    Mpay24\Responses
  *
- * @author     mPAY24 GmbH <support@mpay24.com>
- * @author     Stefan Polzer <develop@ps-webdesign.com>
- * @filesource CreatePaymentTokenResponse.php
+ * @author     Unzer Austria GmbH <online.support.at@unzer.com>
+ * @author     Stefan Polzer <develop@ps-webdesign.com>, Milko Daskalov <milko.daskalov@unzer.com>
+ * @filesource CreateApplePayTokenResponse.php
  * @license    MIT
  */
-class CreatePaymentTokenResponse extends AbstractResponse
+class CreateApplePayTokenResponse extends AbstractResponse
 {
     /**
      * The token, got back from Mpay24, which will be used for the actual payment
@@ -40,12 +40,7 @@ class CreatePaymentTokenResponse extends AbstractResponse
     protected $errText;
 
     /**
-     * @var string
-     */
-    protected $location;
-
-    /**
-     * CreatePaymentTokenResponse constructor.
+     * CreateApplePayTokenResponse constructor.
      *
      * @param string $response
      */
@@ -55,7 +50,7 @@ class CreatePaymentTokenResponse extends AbstractResponse
 
         if ($this->hasNoException()) {
 
-            $this->parseResponse($this->getBody('CreatePaymentTokenResponse'));
+            $this->parseResponse($this->getBody('CreateApplePayTokenResponse'));
         }
     }
 
@@ -94,14 +89,6 @@ class CreatePaymentTokenResponse extends AbstractResponse
     }
 
     /**
-     * @return string
-     */
-    public function getLocation()
-    {
-        return $this->location;
-    }
-
-    /**
      * Parse the SelectPaymentResponse message and save the data to the corresponding attributes
      *
      * @param \DOMElement $body
@@ -122,10 +109,6 @@ class CreatePaymentTokenResponse extends AbstractResponse
 
         if ($body->getElementsByTagName('errText')->length > 0) {
             $this->errText = $body->getElementsByTagName('errText')->item(0)->nodeValue;
-        }
-
-        if ($body->getElementsByTagName('location')->length > 0) {
-            $this->location = $body->getElementsByTagName('location')->item(0)->nodeValue;
         }
     }
 }

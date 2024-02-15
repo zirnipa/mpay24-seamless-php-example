@@ -8,7 +8,7 @@ namespace Mpay24\Responses;
  * Class ListProfilesResponse
  * @package    Mpay24\Responses
  *
- * @author     Stefan Polzer <develop@posit.at>
+ * @author     Stefan Polzer <develop@ps-webdesign.com>
  * @filesource ListProfilesResponse.php
  * @license    MIT
  */
@@ -22,7 +22,7 @@ class ListProfilesResponse extends AbstractResponse
     /**
      * @var array
      */
-    protected $profiles = [];
+    protected $profiles = array();
 
     /**
      * @var int
@@ -39,7 +39,7 @@ class ListProfilesResponse extends AbstractResponse
     {
         parent::__construct($response);
 
-        if ($this->hasNoError()) {
+        if ($this->hasNoException()) {
 
             $this->parseResponse($this->getBody('ListProfilesResponse'));
         }
@@ -68,7 +68,7 @@ class ListProfilesResponse extends AbstractResponse
     /**
      * Get the transaction values, returned from mPAY24
      *
-     * @param int $i
+     * @param integer $i
      *          The index of the transaction profile
      *
      * @return array|bool
@@ -112,9 +112,43 @@ class ListProfilesResponse extends AbstractResponse
                 $this->profiles[$i]['updated']    = $profile->getElementsByTagName('updated')->item(0)->nodeValue;
 
                 if ($profile->getElementsByTagName('payment')->length) {
-                    $this->profiles[$i]['payment'] = $profile->getElementsByTagName('payment')->item(0)->nodeValue;
+                    $this->profiles[$i]['payment']         = $profile->getElementsByTagName('payment')->item(0)->nodeValue;
+                    $this->profiles[$i]['paymentProfiles'] = $this->parsePaymentProfiles($profile->getElementsByTagName('payment'));
                 }
             }
         }
+    }
+
+    /**
+     * @param \DOMNodeList $paymentNodeList
+     *
+     * @return array
+     */
+    private function parsePaymentProfiles(\DOMNodeList $paymentNodeList)
+    {
+        $data = array();
+        foreach ($paymentNodeList as $paymentNode) {
+            $data[] = $this->parseSinglePaymentProfile($paymentNode);
+        }
+
+        return $data;
+    }
+
+    /**
+     * @param \DOMElement $paymentNode
+     *
+     * @return array
+     */
+    private function parseSinglePaymentProfile(\DOMElement $paymentNode)
+    {
+        $data = array();
+        /** @var \DOMElement $childNode */
+        foreach ($paymentNode->childNodes as $childNode) {
+            if ($childNode instanceof \DOMElement) {
+                $data[$childNode->nodeName] = trim($childNode->textContent);
+            }
+        }
+
+        return $data;
     }
 }
